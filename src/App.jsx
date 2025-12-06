@@ -54,6 +54,12 @@ function App() {
   const [error, setError] = useState("");
   const [showHelp, setShowHelp] = useState(false);
 
+  // ---------- NEW: Jira Excel + API state ----------
+  const [jiraIssues, setJiraIssues] = useState([]); // parsed issues from Excel
+  const [jiraUploadError, setJiraUploadError] = useState("");
+  const [jiraCreateLog, setJiraCreateLog] = useState(null);
+  const [isCreatingJira, setIsCreatingJira] = useState(false);
+
   // Helper: calendar days between dates (inclusive)
   const getCalendarDays = () => {
     if (!sprintStart || !sprintEnd) return null;
@@ -147,7 +153,7 @@ function App() {
     setMembers((prev) => prev.filter((m) => m.id !== id));
   };
 
-  // -------- Excel helpers --------
+  // -------- Excel helpers for members --------
 
   const parseBoolCell = (value) => {
     if (value === undefined || value === null) return false;
@@ -258,6 +264,126 @@ function App() {
 
     // reset file input so same file can be re-selected if needed
     event.target.value = "";
+  };
+
+  // -------- NEW: Jira Excel helpers --------
+
+  // normalize column name – trims and lowercases (no spaces)
+  const normalizeHeader = (name) =>
+    String(name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+
+  const handleUploadJiraExcel = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setJiraUploadError("");
+    setJiraCreateLog(null);
+    setJiraIssues([]);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const ws = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+        if (!json.length) {
+          setJiraUploadError(
+            "Excel is empty. Please provide at least one row of data."
+          );
+          return;
+        }
+
+        const parsed = json
+          .map((row, index) => {
+            // Try to read columns in a case-insensitive way
+            const map = {};
+            Object.keys(row).forEach((key) => {
+              map[normalizeHeader(key)] = row[key];
+            });
+
+            const issueId = map["issueid"] || map["id"] || "";
+            const assignee = map["assignee"] || "";
+            const storyPoints =
+              map["storypoints"] || map["storypoint"] || map["sp"] || "";
+            const summary = map["summary"] || "";
+            const description = map["description"] || "";
+
+            // Skip rows that don't even have a summary
+            if (!summary || String(summary).trim() === "") return null;
+
+            return {
+              excelRowIndex: index + 2, // +2 → include header row notation
+              issueId: String(issueId || "").trim(),
+              assignee: String(assignee || "").trim(),
+              storyPoints: storyPoints !== "" ? Number(storyPoints) : null,
+              summary: String(summary || "").trim(),
+              description: String(description || "").trim(),
+            };
+          })
+          .filter(Boolean);
+
+        if (!parsed.length) {
+          setJiraUploadError(
+            "No valid rows found. Make sure at least 'Summary' column is filled."
+          );
+          return;
+        }
+
+        setJiraIssues(parsed);
+      } catch (err) {
+        console.error(err);
+        setJiraUploadError(
+          "Failed to parse Jira Excel file. Please check the format."
+        );
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+
+    // allow re-select same file
+    event.target.value = "";
+  };
+
+  const handleCreateJiraIssues = async () => {
+    if (!jiraIssues.length) {
+      setJiraUploadError("Please upload a Jira Excel file first.");
+      return;
+    }
+
+    setIsCreatingJira(true);
+    setJiraUploadError("");
+    setJiraCreateLog(null);
+
+    try {
+      const response = await fetch("/api/jira/bulk-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issues: jiraIssues }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(
+          `Jira API call failed (${response.status}). Details: ${text}`
+        );
+      }
+
+      const data = await response.json();
+      setJiraCreateLog(data);
+    } catch (err) {
+      console.error(err);
+      setJiraUploadError(
+        err.message || "Failed to create Jira issues. See console for details."
+      );
+    } finally {
+      setIsCreatingJira(false);
+    }
   };
 
   // -------- Calculate --------
@@ -406,6 +532,9 @@ function App() {
     ]);
     setResult(null);
     setError("");
+    setJiraIssues([]);
+    setJiraUploadError("");
+    setJiraCreateLog(null);
   };
 
   const handleExport = () => {
@@ -703,6 +832,132 @@ function App() {
             <strong>WorkingFromClient</strong>,{" "}
             <strong>OnshoreHolidays</strong>.
           </p>
+        </div>
+
+        {/* NEW: JIRA EXCEL IMPORT + CREATE SECTION */}
+        <div className="jira-section">
+          <div className="jira-header">
+            <h2>Jira Stories via Excel</h2>
+            <p className="jira-hint">
+              Upload an Excel file with columns:{" "}
+              <strong>Issue ID</strong>, <strong>Assignee</strong>,{" "}
+              <strong>Story Points</strong>, <strong>Summary</strong>,{" "}
+              <strong>Description</strong>. After upload, click &quot;Create
+              Jira Issues&quot; to bulk-create stories.
+            </p>
+          </div>
+
+          <div className="jira-actions">
+            <label className="upload-button">
+              Upload Jira Excel
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleUploadJiraExcel}
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={handleCreateJiraIssues}
+              disabled={!jiraIssues.length || isCreatingJira}
+            >
+              {isCreatingJira
+                ? "Creating Jira issues..."
+                : jiraIssues.length
+                ? `Create ${jiraIssues.length} Jira Issues`
+                : "Create Jira Issues"}
+            </button>
+          </div>
+
+          {jiraIssues.length > 0 && (
+            <div className="jira-preview">
+              <div className="jira-preview-meta">
+                <span>
+                  <strong>{jiraIssues.length}</strong> issues parsed from Excel
+                  and ready to create.
+                </span>
+                <span className="jira-preview-note">
+                  Showing first 5 rows as preview.
+                </span>
+              </div>
+              <div className="jira-preview-table-wrapper">
+                <table className="jira-preview-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Issue ID</th>
+                      <th>Assignee</th>
+                      <th>Story Points</th>
+                      <th>Summary</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jiraIssues.slice(0, 5).map((issue, idx) => (
+                      <tr key={idx}>
+                        <td>{issue.excelRowIndex}</td>
+                        <td>{issue.issueId}</td>
+                        <td>{issue.assignee}</td>
+                        <td>
+                          {issue.storyPoints !== null
+                            ? issue.storyPoints
+                            : ""}
+                        </td>
+                        <td>{issue.summary}</td>
+                        <td className="jira-description-cell">
+                          {issue.description}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {jiraCreateLog && (
+            <div className="jira-log">
+              <h3>Jira Creation Result</h3>
+              <p>
+                Created:{" "}
+                <strong>{jiraCreateLog.successCount ?? 0}</strong> | Failed:{" "}
+                <strong>{jiraCreateLog.failureCount ?? 0}</strong>
+              </p>
+              {jiraCreateLog.results && jiraCreateLog.results.length > 0 && (
+                <div className="jira-log-table-wrapper">
+                  <table className="jira-log-table">
+                    <thead>
+                      <tr>
+                        <th>Excel Row</th>
+                        <th>Issue ID</th>
+                        <th>Jira Key</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jiraCreateLog.results.map((r, idx) => (
+                        <tr key={idx}>
+                          <td>{r.excelRowIndex ?? "-"}</td>
+                          <td>{r.issueId || "-"}</td>
+                          <td>{r.jiraKey || "-"}</td>
+                          <td>{r.success ? "✅ Success" : "❌ Failed"}</td>
+                          <td className="jira-log-error">
+                            {r.errorMessage || "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {jiraUploadError && (
+            <div className="error jira-error">{jiraUploadError}</div>
+          )}
         </div>
 
         {/* ROLES CONFIG SECTION */}
@@ -1132,9 +1387,9 @@ function App() {
               {/* (Existing help content kept exactly as you had it) */}
               <p>
                 This tool helps you calculate sprint capacity for your team in
-                hours and “story point equivalent” days, considering:
-                weekends, holidays, regression days, individual leaves and
-                on-shore holidays.
+                hours and “story point equivalent” days, considering: weekends,
+                holidays, regression days, individual leaves and on-shore
+                holidays.
               </p>
 
               <h3>1. Start with basic sprint information</h3>
@@ -1145,8 +1400,8 @@ function App() {
                 </li>
                 <li>
                   Set the <strong>Sprint Duration</strong> using{" "}
-                  <strong>Start</strong> and <strong>End</strong> dates.
-                  The tool automatically:
+                  <strong>Start</strong> and <strong>End</strong> dates. The
+                  tool automatically:
                   <ul>
                     <li>Counts total calendar days.</li>
                     <li>Counts only Monday–Friday as working days.</li>
@@ -1160,8 +1415,8 @@ function App() {
                       the team.
                     </li>
                     <li>
-                      <strong>Productive Hrs / day</strong> – typical productive
-                      hours per person (default for all members).
+                      <strong>Productive Hrs / day</strong> – typical
+                      productive hours per person (default for all members).
                     </li>
                     <li>
                       <strong>Holidays within Sprint</strong> – global
@@ -1182,8 +1437,8 @@ function App() {
               <h3>2. Configure roles (DEV, QA, etc.)</h3>
               <ol>
                 <li>
-                  In the <strong>Roles</strong> section, keep default roles
-                  like DEV / QA or add new ones (e.g. PO, BA).
+                  In the <strong>Roles</strong> section, keep default roles like
+                  DEV / QA or add new ones (e.g. PO, BA).
                 </li>
                 <li>
                   You can remove a role only if no team member is currently
@@ -1219,8 +1474,8 @@ function App() {
                       </li>
                       <li>
                         <strong>On-shore Holidays</strong> – holidays for this
-                        member at client location (used only when Client
-                        Loc is checked).
+                        member at client location (used only when Client Loc
+                        is checked).
                       </li>
                     </ul>
                   </ol>

@@ -744,4 +744,152 @@ button:disabled {
     box-shadow: 0 18px 30px rgba(15, 23, 42, 0.7);
   }
 }
+/* --- JIRA EXCEL SECTION --- */
+.jira-section {
+  margin-top: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px 12px;
+  border-radius: 16px;
+  background: #fefce8;
+  border: 1px dashed #facc15;
+}
+
+.jira-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jira-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.jira-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #78350f;
+}
+
+.jira-actions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jira-preview {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fef9c3;
+  border: 1px solid #facc15;
+}
+
+.jira-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  color: #854d0e;
+}
+
+.jira-preview-note {
+  font-style: italic;
+}
+
+.jira-preview-table-wrapper {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.jira-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.jira-preview-table th,
+.jira-preview-table td {
+  border: 1px solid #facc15;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.jira-preview-table th {
+  background: #fde68a;
+  font-weight: 600;
+}
+
+.jira-description-cell {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Jira log section */
+.jira-log {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  font-size: 12px;
+  color: #064e3b;
+}
+
+.jira-log h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #065f46;
+}
+
+.jira-log-table-wrapper {
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.jira-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.jira-log-table th,
+.jira-log-table td {
+  border: 1px solid #6ee7b7;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.jira-log-table th {
+  background: #a7f3d0;
+  font-weight: 600;
+}
+
+.jira-log-error {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jira-error {
+  margin-top: 8px;
+}
+
+/* small mobile tweak */
+@media (max-width: 640px) {
+  .jira-preview-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 
