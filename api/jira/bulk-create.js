@@ -69,15 +69,15 @@ export default async function handler(req, res) {
     JIRA_BASE_URL,
     JIRA_EMAIL,
     JIRA_API_TOKEN,
-    JIRA_PROJECT_KEY,
+    JIRA_SPACE_KEY,
     JIRA_ISSUE_TYPE = "Story",
     JIRA_STORY_POINTS_FIELD = "customfield_10016",
   } = process.env;
 
-  if (!JIRA_BASE_URL || !JIRA_EMAIL || !JIRA_API_TOKEN || !JIRA_PROJECT_KEY) {
+  if (!JIRA_BASE_URL || !JIRA_EMAIL || !JIRA_API_TOKEN || !JIRA_SPACE_KEY) {
     return res.status(500).json({
       message:
-        "Missing Jira env vars. Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY in Vercel.",
+        "Missing Jira env vars. Set JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_SPACE_KEY in Vercel.",
     });
   }
 
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
 
     // Build Jira fields
     const fields = {
-      project: { key: JIRA_PROJECT_KEY },
+      project: { key: JIRA_SPACE_KEY },
       summary: summary.toString(),
       description: buildAdfDescription(description),
       issuetype: { name: JIRA_ISSUE_TYPE },
