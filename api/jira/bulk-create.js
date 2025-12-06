@@ -1,6 +1,64 @@
 // api/jira/bulk-create.js
 import axios from "axios";
 
+/**
+ * Build ADF (Atlassian Document Format) for a plain-text description.
+ * This keeps your Excel "Description" column simple, but satisfies Jira Cloud.
+ */
+function buildAdfDescription(text) {
+  const safeText = (text || "").toString().trim();
+
+  return {
+    type: "doc",
+    version: 1,
+    content: safeText
+      ? [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: safeText,
+              },
+            ],
+          },
+        ]
+      : [],
+  };
+}
+
+/**
+ * Resolve "assignee" text (email, display name, or accountId) to a Jira accountId.
+ * - If it's already an accountId, we just use it.
+ * - Otherwise, we search Jira users with ?query=<value> and grab the first match.
+ */
+async function resolveAssigneeAccountId(jiraClient, assigneeRaw) {
+  if (!assigneeRaw) return null;
+
+  const value = assigneeRaw.toString().trim();
+  if (!value) return null;
+
+  // Heuristic: if it "looks like" an Atlassian accountId, just use it as-is.
+  // (Typical accountIds are long, opaque strings.)
+  if (value.length >= 20 && !value.includes("@")) {
+    return value;
+  }
+
+  // Otherwise, search by query (works for display name or email if allowed).
+  const searchRes = await jiraClient.get("/user/search", {
+    params: { query: value, maxResults: 1 },
+  });
+
+  const users = searchRes.data || [];
+  if (!users.length) {
+    throw new Error(
+      `Could not find Jira user matching "${value}". Check the Assignee value.`
+    );
+  }
+
+  return users[0].accountId;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -63,10 +121,11 @@ export default async function handler(req, res) {
       continue;
     }
 
+    // Build Jira fields
     const fields = {
       project: { key: JIRA_PROJECT_KEY },
-      summary,
-      description,
+      summary: summary.toString(),
+      description: buildAdfDescription(description),
       issuetype: { name: JIRA_ISSUE_TYPE },
     };
 
@@ -78,10 +137,35 @@ export default async function handler(req, res) {
       fields[JIRA_STORY_POINTS_FIELD] = Number(storyPoints);
     }
 
-    // For Jira Cloud, "assignee" should be accountId in your Excel
+    // Resolve assignee → accountId
     if (assignee) {
-      fields.assignee = { accountId: assignee };
-      // For Jira Server/DC you might instead use: { name: assignee }
+      try {
+        const accountId = await resolveAssigneeAccountId(jiraClient, assignee);
+        if (accountId) {
+          fields.assignee = { accountId };
+        } else {
+          // If no accountId found, mark this row as failed and skip create.
+          results.push({
+            excelRowIndex,
+            issueId,
+            jiraKey: null,
+            success: false,
+            errorMessage: `Assignee "${assignee}" could not be resolved to a Jira user.`,
+          });
+          continue;
+        }
+      } catch (err) {
+        results.push({
+          excelRowIndex,
+          issueId,
+          jiraKey: null,
+          success: false,
+          errorMessage:
+            err.message ||
+            `Failed to resolve assignee "${assignee}". Check the value in Excel.`,
+        });
+        continue;
+      }
     }
 
     try {
